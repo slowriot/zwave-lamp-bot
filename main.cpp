@@ -23,34 +23,52 @@ auto main()->int {
 
   lamps.emplace(4, "Dining Table");
   lamps.emplace(3, "Armchairs");
-  std::initializer_list constexpr const power_values{0, 5, 10, 15, 25, 50, 75, 99};
+  std::initializer_list constexpr const power_values{0, 10, 15, 25, 40, 60, 75, 99};
+  urdl::url const zwave_api_endpoint{"http://127.0.0.1:8090/valuepost.html"};
 
   auto send_lamp_list = [&](int_fast64_t chat_id, std::string const &reply){
-      telegram::types::reply_markup::inline_keyboard_markup reply_markup;
-      for(auto const &lamp : lamps) {
-        reply_markup.keyboard_buttons.emplace_back();
-        reply_markup.keyboard_buttons.back().emplace_back(lamp.second.name, "noop");
-        reply_markup.keyboard_buttons.emplace_back();
-        for(unsigned int value : power_values) {
-          std::string label;
-          if(value == lamp.second.value) {
-            label = "[" + std::to_string(value) + "]";
-          } else {
-            label = std::to_string(value);
-          }
-          reply_markup.keyboard_buttons.back().emplace_back(label, std::to_string(lamp.first) + "_" + std::to_string(value));
+    /// Send the keyboard with the list of lamps and their settings
+    telegram::types::reply_markup::inline_keyboard_markup reply_markup;
+    for(auto const &lamp : lamps) {
+      reply_markup.keyboard_buttons.emplace_back();
+      reply_markup.keyboard_buttons.back().emplace_back(lamp.second.name, "noop");
+      reply_markup.keyboard_buttons.emplace_back();
+      for(unsigned int value : power_values) {
+        std::string label;
+        if(value == lamp.second.value) {
+          label = "[" + std::to_string(value) + "]";
+        } else {
+          label = std::to_string(value);
         }
+        reply_markup.keyboard_buttons.back().emplace_back(label, std::to_string(lamp.first) + "_" + std::to_string(value));
       }
-      sender.send_message(chat_id,
-                          reply,
-                          reply_markup);
+    }
+    sender.send_message(chat_id,
+                        reply,
+                        reply_markup);
+  };
+
+  auto set_lamp_level = [&](unsigned int lamp_id, unsigned int new_level) {
+    /// Update a z-wave device's level
+    httplib::Client http_client(zwave_api_endpoint.host().c_str(), zwave_api_endpoint.port(), 10);
+    auto http_result{http_client.Post((zwave_api_endpoint.path() + "?" + zwave_api_endpoint.query()).c_str(), // endpoint & query
+                                      (std::to_string(lamp_id) + "-SWITCH MULTILEVEL-user-byte-1-0=" + std::to_string(new_level)).c_str(), // post data
+                                      "application/x-www-form-urlencoded")};    // content type
+    if(!http_result) {
+      throw std::runtime_error("Error posting to ZWave URL " + zwave_api_endpoint.to_string());
+    } else if (http_result->status != 200) {
+      throw std::runtime_error("Error posting to ZWave URL " + zwave_api_endpoint.to_string() + ": " + std::to_string(http_result->status));
+    }
+    if(http_result->body.empty()) {
+      throw std::runtime_error("Empty return when posting to ZWave URL " + zwave_api_endpoint.to_string() + ": " + std::to_string(http_result->status));
+    }
   };
 
   listener.set_callback_message_json([&](nlohmann::json const &input){
+    /// Set up a listener for messages
     auto const &message(telegram::types::message::from_json(input));
 
     if(message.text && *message.text == "/start") {                             // if they've asked us to start, send them a keyboard
-      //sender.send_message(message.chat.id, "Hello, " + (message.from ? message.from->first_name : "visitor") + "!  What can I illuminate for you today?");
       send_lamp_list(message.chat.id, "Hello, " + (message.from ? message.from->first_name : "visitor") + "!  What can I illuminate for you today?");
     }
   });
@@ -70,9 +88,11 @@ auto main()->int {
     std::cout << "DEBUG: lamp id [" << query.data->substr(0, query.data->find('_')) << "]" << std::endl;
     std::cout << "DEBUG: new value [" << query.data->substr(query.data->find('_'), std::string::npos) << "]" << std::endl;
 
-    auto &this_lamp{lamps.at(std::stoi(query.data->substr(0, query.data->find('_'))))};
-    this_lamp.value = std::stoi(query.data->substr(query.data->find('_') + 1, std::string::npos));
+    unsigned int const lamp_id{static_cast<unsigned int>(std::stoi(query.data->substr(0, query.data->find('_'))))};
+    auto &this_lamp{lamps.at(lamp_id)};
+    this_lamp.value = std::stoi(query.data->substr(query.data->find('_') + 1u, std::string::npos));
     send_lamp_list(query.from.id, "Setting " + this_lamp.name + " to " + std::to_string(this_lamp.value) + ".");
+    set_lamp_level(lamp_id, this_lamp.value);
   });
 
   listener.set_num_threads(1);                                                  // run single-threaded as we don't want concurrent modifications
