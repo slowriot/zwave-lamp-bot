@@ -75,7 +75,6 @@ auto main()->int {
 
   listener.set_callback_query_callback([&](telegram::types::callback_query const &query){
     /// Set up a listener for callback queries
-    std::cout << "DEBUG: callback query callback firing " << *query.data << std::endl;
     if(!query.data) {
       sender.send_message(query.from.id, "Something went wrong - no query data.");
       return;
@@ -85,12 +84,14 @@ auto main()->int {
       sender.send_message(query.from.id, "You boop the button, but it does nothing.");
       return;
     }
-    std::cout << "DEBUG: lamp id [" << query.data->substr(0, query.data->find('_')) << "]" << std::endl;
-    std::cout << "DEBUG: new value [" << query.data->substr(query.data->find('_'), std::string::npos) << "]" << std::endl;
-
     unsigned int const lamp_id{static_cast<unsigned int>(std::stoi(query.data->substr(0, query.data->find('_'))))};
     auto &this_lamp{lamps.at(lamp_id)};
     this_lamp.value = std::stoi(query.data->substr(query.data->find('_') + 1u, std::string::npos));
+    std::cout << "Request from [" << query.from.first_name;
+    if(query.from.last_name) std::cout << " " << *query.from.last_name;
+    if(query.from.username) std::cout << " (" << *query.from.username << ")";
+    std::cout << "], lamp id [" << lamp_id << "], new value [" << this_lamp.value << "]" << std::endl;
+
     send_lamp_list(query.from.id, "Setting " + this_lamp.name + " to " + std::to_string(this_lamp.value) + ".");
     set_lamp_level(lamp_id, this_lamp.value);
   });
