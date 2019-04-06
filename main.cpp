@@ -21,8 +21,10 @@ auto main()->int {
   };
   std::map<unsigned int, lamp_type> lamps;
 
-  lamps.emplace(4, "Dining Table");
-  lamps.emplace(3, "Armchairs");
+  lamps.emplace(2, "Corner Lamp");
+  lamps.emplace(3, "Dining Table");
+  lamps.emplace(4, "Armchairs");
+  lamps.emplace(5, "Bedroom Lamp");
   std::initializer_list constexpr const power_values{0, 10, 15, 25, 40, 60, 75, 99};
   urdl::url const zwave_api_endpoint{"http://127.0.0.1:8090/valuepost.html"};
 
